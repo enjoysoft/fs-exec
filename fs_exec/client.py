@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 import os
 import sys
 import time
@@ -234,16 +236,38 @@ class Client:
         except (OSError, ValueError, TypeError, KeyError):
             return None
 
+    def relay_health(self) -> dict[str, Any] | None:
+        try:
+            # Keep fs-exec independent of the sidecar implementation.
+            relay = json.loads(read_bounded(self.paths.health / "rally.json", 65536))
+            age = (now_ns() - int(relay["at_ns"])) / 1e9
+            overhead = float(relay["recommended_overhead"])
+            if not math.isfinite(overhead) or overhead <= 0:
+                return None
+            return {**relay, "age_seconds": age, "stale": not 0 <= age <= 15}
+        except (OSError, ValueError, TypeError, KeyError):
+            return None
+
+    def transport_overhead(self) -> float:
+        if self.target.transport_timeout is not None:
+            return self.target.transport_timeout
+        stats = self.latency.stats()
+        # Client probes already traverse both relay legs. Never add relay RTT
+        # to fresh end-to-end measurements. Relay advice is a fallback floor.
+        relay = self.relay_health() if stats.stale else None
+        return max(stats.recommended_overhead, float(relay["recommended_overhead"])) if relay and not relay["stale"] else stats.recommended_overhead
+
     def health(self, *, probe: bool = True, timeout: float = 30) -> dict[str, Any]:
         self.paths.require_client_namespace()
         heartbeat = self._heartbeat()
-        request_visibility = result_visibility = None
+        request_visibility = result_visibility = round_trip = None
         if probe:
             probe_id = f"p-{uuid.uuid4().hex}"
             staging = self.paths.health / "pings" / f"{probe_id}.staging"
             ready = self.paths.health / "pings" / f"{probe_id}.ready"
             staging.mkdir(mode=0o770)
             sent_ns = now_ns()
+            sent_monotonic = time.monotonic()
             write_exclusive(staging / "PING", canonical_json({"probe_id": probe_id, "client_ns": sent_ns}))
             os.replace(staging, ready)
             fsync_directory(ready.parent)
@@ -257,7 +281,8 @@ class Client:
                     received_ns = now_ns()
                     request_visibility = max(0.0, (int(pong["observed_ns"]) - sent_ns) / 1e9)
                     result_visibility = max(0.0, (received_ns - int(pong.get("responded_ns", pong["observed_ns"]))) / 1e9)
-                    self.latency.record(request_visibility, result_visibility)
+                    round_trip = time.monotonic() - sent_monotonic
+                    self.latency.record(request_visibility, result_visibility, round_trip=round_trip)
                     break
                 except (OSError, ValueError, KeyError, TypeError):
                     if time.monotonic() >= deadline:
@@ -266,4 +291,4 @@ class Client:
             heartbeat = self._heartbeat()
         stats = asdict(self.latency.stats())
         age = (now_ns() - int(heartbeat.get("at_ns", 0))) / 1e9 if heartbeat else None
-        return {"target": self.target.name, "watcher": heartbeat, "watcher_age": age, "watcher_state": "UNAVAILABLE" if age is None or age > 15 else heartbeat.get("state"), "probe": {"succeeded": request_visibility is not None if probe else None, "request_visibility": request_visibility, "result_visibility": result_visibility}, "latency": stats}
+        return {"target": self.target.name, "watcher": heartbeat, "watcher_age": age, "watcher_state": "UNAVAILABLE" if age is None or age > 15 else heartbeat.get("state"), "probe": {"succeeded": request_visibility is not None if probe else None, "request_visibility": request_visibility, "result_visibility": result_visibility, "round_trip": round_trip}, "latency": stats, "relay": self.relay_health(), "transport_overhead": self.transport_overhead()}

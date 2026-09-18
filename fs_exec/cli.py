@@ -36,8 +36,7 @@ def _client(args: argparse.Namespace) -> Client:
 def _transport(client: Client, value: str) -> float:
     if value != "auto":
         return float(value)
-    configured = client.target.transport_timeout
-    return configured if configured is not None else client.latency.stats().recommended_overhead
+    return client.transport_overhead()
 
 
 def _status_exit(status: JobStatus) -> int:

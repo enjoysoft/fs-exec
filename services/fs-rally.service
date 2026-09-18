@@ -1,0 +1,29 @@
+[Unit]
+Description=fs-rally directional filesystem transport (no command execution)
+After=network-online.target remote-fs.target
+Wants=network-online.target
+# Add RequiresMountsFor for the actual drop/share mount points.
+
+[Service]
+Type=simple
+User=fs-rally
+Group=fs-rally
+ExecStart=/opt/fs-exec/venv/bin/fs-rally --config /etc/fs-exec/rally.toml run
+Restart=on-failure
+RestartSec=5
+UMask=0077
+StateDirectory=fs-rally
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Narrow to configured targets; filesystem ACLs further restrict directions.
+ReadWritePaths=/srv/fs-drop/prod-relay-v1 /mnt/fs-shared/prod-relay-v1 /var/lib/fs-rally
+
+[Install]
+WantedBy=multi-user.target

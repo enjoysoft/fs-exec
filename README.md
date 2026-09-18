@@ -34,6 +34,19 @@ fs-exec --target windows --script 'Get-ComputerInfo | ConvertTo-Json' --runtime 
 
 Set `FS_EXEC_CONFIG=/path/config.toml` or pass global `--config` before the subcommand. `fs-exec exec ...` is equivalent to the shell-like form above.
 
+## When the sandbox cannot mount the real share
+
+Install the included `fs-rally` sidecar outside the sandbox. The client writes to
+an allowed drop directory; the sidecar forwards only protocol-v2 requests/cancel/
+pings outward and verified results/status/health inward. It never executes commands.
+The watcher remains on the real share under its existing policy and separate account.
+
+Start with [`examples/rally.toml`](examples/rally.toml) and the
+[relay deployment guide](docs/rally.md), including mandatory directional ACLs,
+fresh-namespace migration, limits, service samples and native-platform test gates.
+Use `fs-rally --config rally.toml dry-run` before `run`. Relayed output waits for
+FINAL integrity verification; status and cancellation still work while jobs run.
+
 ## CLI
 
 ```text

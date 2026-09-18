@@ -1,0 +1,26 @@
+# These paths are as seen by the OUTSIDE sidecar, not the sandbox.
+# Provision both target trees and directional ACLs before starting fs-rally.
+[rally]
+sandbox_root = "/srv/fs-drop"
+outside_root = "/mnt/fs-shared"
+state_dir = "/var/lib/fs-rally"
+backend = "python"
+poll_min = 0.05
+poll_max = 1.0
+jitter = 0.2
+max_file_bytes = 16777216
+max_publication_bytes = 167772160
+max_files = 8500
+max_entries = 10000
+max_publications = 100000
+max_pending_bytes = 536870912
+sample_retention_seconds = 900
+fallback_overhead = 30
+
+[[targets]]
+name = "production"
+sandbox = "prod-relay-v1"
+outside = "prod-relay-v1"
+# Fixed allowlist: requests/cancel/pings outbound; results/status/health inbound.
+# There is deliberately no general-purpose bidirectional mirror mode.
+direction = "protocol-v2"
