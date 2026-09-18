@@ -1,0 +1,20 @@
+[targets.sandbox-host]
+path = "/mnt/fs-exec/sandbox-host"
+platform = "linux"
+description = "Watcher on the sandbox host"
+
+[targets.dev-linux]
+path = "/mnt/fs-exec/dev-linux"
+platform = "linux"
+description = "Another development Linux machine"
+
+[targets.prod-linux]
+path = "/mnt/fs-exec/prod-linux"
+platform = "linux"
+description = "Production Linux read-only operations"
+transport_timeout = 45
+
+[targets.windows]
+path = "//fileserver/fs-exec/windows"
+platform = "windows"
+description = "Native Windows watcher"

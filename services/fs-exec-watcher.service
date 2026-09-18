@@ -1,0 +1,21 @@
+[Unit]
+Description=fs-exec authorized filesystem relay watcher
+After=network-online.target remote-fs.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fs-exec
+Group=fs-exec
+ExecStart=/opt/fs-exec/venv/bin/fs-exec-watcher --root /mnt/relay/prod-linux --policy /etc/fs-exec/policy.toml --journal /var/lib/fs-exec/journal.jsonl
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/mnt/relay/prod-linux /var/lib/fs-exec /srv/operations/read-only
+
+[Install]
+WantedBy=multi-user.target

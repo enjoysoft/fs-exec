@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fs-exec"
+version = "0.1.0"
+description = "Filesystem-backed authorized remote execution relay"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "fs-exec contributors"}]
+dependencies = []
+
+[project.scripts]
+fs-exec = "fs_exec.cli:main"
+fs-exec-watcher = "fs_exec.cli:watcher_main"
+
+[tool.setuptools.packages.find]
+include = ["fs_exec*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,10 @@
+[policy]
+allowed_executables = ["python3", "python.exe", "curl", "git", "psql", "bash", "pwsh", "powershell.exe"]
+allowed_runtimes = ["bash", "powershell"]
+cwd_roots = ["/home/developer/work"]
+environment_allowlist = ["CI", "DEBUG", "PGSERVICE"]
+max_runtime_seconds = 1800
+max_request_bytes = 1048576
+max_output_bytes = 16777216
+max_upload_bytes = 134217728
+max_artifact_bytes = 134217728
