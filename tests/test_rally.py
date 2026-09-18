@@ -109,6 +109,127 @@ class RallyTests(unittest.TestCase):
         self.assertEqual(verify_request(self.outside.ready(job), 0)["job_id"], job)
         self.assertEqual(read_final(self.drop.result(job))["exit_code"], 7)
 
+    def test_review_directory_durability_failure_stays_pending(self):
+        from fs_exec.util import fsync_directory
+        for failure_at in ("file-directory", "ancestor-directory", "marker-directory"):
+            with self.subTest(failure_at=failure_at):
+                job = self.submit("j-durability-" + failure_at)
+                ready = self.outside.ready(job)
+                gate = {"armed": failure_at != "marker-directory"}
+                def fail_sync(path, failure_at=failure_at, ready=ready, gate=gate):
+                    blocked = path == (self.outside.inbox if failure_at == "ancestor-directory" else ready)
+                    if gate["armed"] and blocked:
+                        raise OSError(5, "injected directory EIO")
+                    fsync_directory(path)
+                def install(path, body, ready=ready, gate=gate):
+                    if path == ready / "COMMIT":
+                        gate["armed"] = True
+                    install_file(path, body)
+                with Rally(self.config) as rally, patch("fs_exec.rally.fsync_directory", side_effect=fail_sync), patch("fs_exec.util.fsync_directory", side_effect=fail_sync), patch("fs_exec.rally.install_file", side_effect=install):
+                    for _ in range(4):
+                        health = rally.once()
+                        self.assertGreater(health["errors"], 0)
+                        self.assertEqual(health["pending"], 1)
+                        self.assertFalse(rally.done(self.mapping, "outbound", f"inbox/{job}.ready/"))
+                    self.assertEqual((ready / "COMMIT").exists(), failure_at == "marker-directory")
+                # Restart plus a recovered filesystem must finish the same identity.
+                with Rally(self.config) as rally:
+                    self.assertEqual(rally.once()["pending"], 0)
+                    self.assertTrue(rally.done(self.mapping, "outbound", f"inbox/{job}.ready/"))
+
+    def test_review_transient_eio_recovery_flushes_before_marker_and_done(self):
+        from fs_exec.util import fsync_directory
+        job = self.submit(upload=True)
+        ready = self.outside.ready(job)
+        events = []
+        gate = {"fail": True}
+        def sync(path):
+            if path == ready / "uploads" and gate["fail"]:
+                gate["fail"] = False
+                events.append(("failed-sync", path))
+                raise OSError(5, "one transient EIO")
+            fsync_directory(path)
+            events.append(("synced", path))
+        def install(path, body):
+            events.append(("install", path))
+            install_file(path, body)
+        with patch("fs_exec.rally.fsync_directory", side_effect=sync), patch("fs_exec.rally.install_file", side_effect=install):
+            with Rally(self.config) as rally:
+                self.assertEqual(rally.once()["pending"], 1)
+                self.assertFalse((ready / "COMMIT").exists())
+            events.clear()
+            with Rally(self.config) as rally, patch.object(rally, "log", side_effect=lambda event, **fields: events.append((event, fields.get("key")))):
+                self.assertEqual(rally.once()["pending"], 0)
+        marker = events.index(("install", ready / "COMMIT"))
+        for file, directories in ((ready / "request.json", (ready, self.outside.inbox, self.outside.root)),
+                                  (ready / "uploads/input.bin", (ready / "uploads", ready, self.outside.inbox, self.outside.root))):
+            installed = events.index(("install", file))
+            for directory in directories:
+                self.assertIn(("synced", directory), events[installed + 1:marker])
+        done = events.index(("published", f"inbox/{job}.ready/"))
+        for directory in (ready, self.outside.inbox, self.outside.root):
+            self.assertIn(("synced", directory), events[marker + 1:done])
+
+    def test_review_failed_artifact_collection_still_returns_final(self):
+        cwd = self.base / "work"
+        cwd.mkdir()
+        (cwd / "first.txt").write_text("copied before failure")
+        job = self.client.submit(argv=[sys.executable, "-c", "print('executed')"], cwd=str(cwd), artifacts=["first.txt", "../invalid"])
+        with Rally(self.config) as rally:
+            rally.once()
+        Watcher(self.outside.root, Policy(allowed_executables=frozenset({sys.executable}), cwd_roots=(cwd,))).run(once=True)
+        result = read_final(self.outside.result(job))
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["artifacts"], [])
+        self.assertTrue((self.outside.result(job) / "artifacts/first.txt").exists())
+        with Rally(self.config) as rally:
+            self.assertEqual(rally.once()["errors"], 0)
+        self.assertEqual(read_final(self.drop.result(job)), result)
+        self.assertFalse((self.drop.result(job) / "artifacts").exists())
+
+    def test_review_recovered_job_ignores_partial_and_empty_artifacts(self):
+        job = self.submit()
+        with Rally(self.config) as rally:
+            rally.once()
+        watcher = Watcher(self.outside.root, Policy())
+        self.assertIsNotNone(watcher._claim(job))
+        root = self.outside.result(job)
+        write_exclusive(root / "artifacts/nested/partial.bin", b"partial artifact")
+        (root / "artifacts/empty/subdir").mkdir(parents=True)
+        Watcher(self.outside.root, Policy()).run(once=True)
+        recovered = read_final(root)
+        self.assertEqual(recovered["status"], "AVAILABILITY_UNKNOWN")
+        with Rally(self.config) as rally:
+            self.assertEqual(rally.once()["errors"], 0)
+        self.assertEqual(read_final(self.drop.result(job)), recovered)
+        self.assertFalse((self.drop.result(job) / "artifacts").exists())
+        # Unreferenced is not permission to accept dangerous tree entries.
+        (root / "artifacts/alias").symlink_to(self.base, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            result_snapshot(root, self.config, job)
+
+    def test_review_cancel_legal_suffixes_before_discovery(self):
+        cwd = self.base / "work"
+        cwd.mkdir()
+        jobs = ["j-legal.tmp", "j-legal.staging", ".j-temp.123.abcdef12.tmp", "j-control"]
+        for job in jobs:
+            self.client.submit(job_id=job, argv=[sys.executable, "-c", "print('must not execute')"], cwd=str(cwd))
+            self.client.cancel(job)
+        (self.drop.inbox / ("j-unpublished." + "a" * 32 + ".staging")).mkdir()
+        (self.drop.health / "pings" / ("p-" + "b" * 32 + ".staging")).mkdir()
+        temporary = self.drop.control / "cancel/.j-unpublished.123.abcdef12.tmp"
+        write_exclusive(temporary, canonical_json({"job_id": "j-unpublished", "at_ns": time.time_ns()}))
+        with Rally(self.config) as rally:
+            self.assertEqual(rally.once()["errors"], 0)
+            self.assertFalse(rally.db.execute("SELECT 1 FROM known WHERE name=?", (temporary.name,)).fetchone())
+        Watcher(self.outside.root, Policy(allowed_executables=frozenset({sys.executable}), cwd_roots=(cwd,))).run(once=True)
+        with Rally(self.config) as rally:
+            rally.once()
+        for job in jobs:
+            with self.subTest(job=job):
+                self.assertTrue((self.outside.control / "cancel" / job).exists())
+                self.assertEqual(read_final(self.drop.result(job))["status"], "CANCELLED")
+
     def test_partial_request_and_reordered_payload_retry_exact_path(self):
         job = self.submit(upload=True)
         payload = self.drop.ready(job) / "uploads/input.bin"

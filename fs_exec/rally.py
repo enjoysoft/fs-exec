@@ -269,7 +269,7 @@ class Snapshot:
         allowed = set(self.files) | (extra or set())
         directories = {str(parent).replace("\\", "/") for name in allowed for parent in Path(name).parents if str(parent) != "."}
         if result:
-            directories.update({"stdout", "stderr"})
+            directories.update({"stdout", "stderr", "artifacts"})
         count = 0
         def walk(directory: Path, prefix: str = "") -> None:
             nonlocal count
@@ -279,14 +279,18 @@ class Snapshot:
                     count += 1
                     if count > self.config.max_entries:
                         raise Rejected("directory entry count limit")
-                    name = prefix + component(entry.name)
+                    name = relative(prefix + entry.name)
                     check_path(Path(entry.path))
                     # DirEntry.stat reports st_nlink=0 on Windows; lstat uses
                     # the actual file metadata and does not trust cached hints.
                     info = Path(entry.path).lstat()
-                    if stat.S_ISDIR(info.st_mode) and name in directories:
+                    # A failed artifact collection or watcher recovery can leave
+                    # partial files and empty directories outside FINAL's manifest.
+                    # Inspect their path/type bounds, but never copy their bytes.
+                    artifact = result and name.startswith("artifacts/")
+                    if stat.S_ISDIR(info.st_mode) and (name in directories or artifact):
                         walk(Path(entry.path), name + "/")
-                    elif (name not in allowed and not (result and re.fullmatch(r"(?:result-[0-9a-f]{32}\.json|(?:stdout|stderr)/[0-9]{8}\.chunk)", name))) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    elif (name not in allowed and not artifact and not (result and re.fullmatch(r"(?:result-[0-9a-f]{32}\.json|(?:stdout|stderr)/[0-9]{8}\.chunk)", name))) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                         raise Rejected("unknown or unsafe publication path")
         walk(self.root)
 
@@ -456,10 +460,21 @@ class Rally:
             for index, entry in enumerate(entries):
                 if index >= self.config.max_entries:
                     raise Rejected("discovery count limit")
-                # Protocol staging and exclusive-publish temporary names are not
-                # publications and must never be forwarded.
-                if entry.name.endswith((".staging", ".tmp")):
+                # Only generated staging patterns are unpublished. A cancellation
+                # is named by its job ID, which may legally end in .tmp/.staging.
+                if kind == "job" and re.fullmatch(r".+\.[0-9a-f]{32}\.staging", entry.name):
                     continue
+                if kind == "probe" and re.fullmatch(r"p-[0-9a-f]{32}\.staging", entry.name):
+                    continue
+                if kind == "cancel" and re.fullmatch(r"\..+\.[0-9]+\.[0-9a-f]{8}\.tmp", entry.name):
+                    try:
+                        value = object_json(stable_read(Path(entry.path), min(65536, self.config.max_file_bytes)))
+                    except (OSError, ValueError, RecursionError):
+                        continue
+                    # Even a temp-looking name is a valid cancellation ID if its
+                    # complete record identifies that exact name, not another ID.
+                    if value.get("job_id") != entry.name:
+                        continue
                 if suffix and not entry.name.endswith(suffix):
                     raise Rejected("unknown ingress path")
                 name = entry.name[:-len(suffix)] if suffix else entry.name
@@ -509,6 +524,13 @@ class Rally:
             # Read back every dependency before advancing to its marker.
             if stable_read(path, len(body)) != body:
                 raise Rejected("destination verification deferred")
+            # Existing equal files may be remnants of a failed directory fsync.
+            # Retry all namespace directory barriers, including mkdir ancestors,
+            # before advancing to another file/marker or committing journal done.
+            for directory in (path.parent, *path.parent.parents):
+                fsync_directory(directory)
+                if directory == root:
+                    break
         with self.db:
             self.db.execute("UPDATE publications SET done=1 WHERE target=? AND direction=? AND key=?", identity)
             self.db.execute("DELETE FROM files WHERE target=? AND direction=? AND key=?", identity)

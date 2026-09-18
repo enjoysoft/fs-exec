@@ -75,12 +75,15 @@ There is **no claims-tree synchronization**, because clients use CLAIMED/RUNNING
 under results. No watcher lock, claim, STARTED tombstone, policy, unrelated root
 file, or unreferenced artifact is copied or deleted. Reverse-direction content
 is not used as a source: a fake drop FINAL cannot modify the shared FINAL.
-Incoming `.staging` and `.tmp` names are unpublished and never forwarded. Unknown
-request/ping tree entries reject that publication. Result trees may contain
-older well-named result generations and provisional numeric chunks after watcher
-recovery; those are not forwarded unless selected by FINAL. Other unknown result
-paths reject that publication. Root areas outside the allowlist are ignored,
-never recursively mirrored.
+Generated request/probe staging names and cancellation temporary files are
+unpublished and never forwarded. Cancellation IDs may legally end in `.tmp` or
+`.staging`; even a temp-looking name is accepted when its complete record names
+that exact ID. Unknown request/ping tree entries reject that publication. Result
+trees may contain older well-named generations, provisional numeric chunks, and
+partial or empty artifact trees after watcher failure/recovery. Those paths get
+bounded path/type inspection but no unreferenced bytes are forwarded. Other
+unknown result paths reject that publication. Root areas outside the allowlist
+are ignored, never recursively mirrored.
 
 The relay reads a bounded stable snapshot, validates complete JSON (no duplicate
 keys, concatenated objects or NaN), manifest identities, sizes, SHA-256 hashes and
@@ -95,6 +98,10 @@ Validated bytes and their direction/target/path/content identity are committed
 to a synchronous SQLite transaction **before** any destination writes. Files
 are fsynced in destination-local temporary names and atomically hard-linked
 without replacement, then reread; payloads and generations precede COMMIT/FINAL.
+Every replay flushes destination directories through the target root, including
+when a file already exists with equal bytes. A failed directory durability barrier
+keeps the publication pending; an existing file is not proof that its prior fsync
+succeeded. No later dependency/marker is published until that barrier succeeds.
 Shares must support these v2 atomic hard links; unsupported filesystems fail
 closed. Recovery can clean only a journal-bound temporary name. A leftover
 publication hard link is accepted only when its two names identify the same
