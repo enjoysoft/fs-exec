@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from .client import Client, JobStatus
 from .config import default_config_path, load_policy, load_registry
@@ -129,8 +129,9 @@ def cmd_cancel(args: argparse.Namespace) -> int:
 
 def cmd_health(args: argparse.Namespace) -> int:
     client = _client(args)
-    _json(client.health(probe=not args.no_probe, timeout=_transport(client, args.transport_timeout)))
-    return 0
+    health = client.health(probe=not args.no_probe, timeout=_transport(client, args.transport_timeout))
+    _json(health)
+    return 0 if health["watcher_state"] in {"READY", "BUSY"} and (args.no_probe or health["probe"]["succeeded"]) else 1
 
 
 def cmd_exec(args: argparse.Namespace) -> int:

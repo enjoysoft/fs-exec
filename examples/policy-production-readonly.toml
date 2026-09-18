@@ -1,5 +1,5 @@
 [policy]
-allowed_executables = ["curl", "psql"]
+allowed_executables = ["/usr/bin/curl", "/usr/bin/psql"]
 allowed_runtimes = []
 cwd_roots = ["/srv/operations/read-only"]
 environment_allowlist = ["PGSERVICE"]
@@ -8,5 +8,8 @@ max_request_bytes = 262144
 max_output_bytes = 4194304
 max_upload_bytes = 1048576
 max_artifact_bytes = 1048576
+max_upload_files = 16
+max_artifact_files = 16
+max_queue_age_seconds = 300
 read_only = true
 approval_hook = "/usr/local/libexec/fs-exec-approve-readonly"

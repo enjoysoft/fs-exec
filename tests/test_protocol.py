@@ -11,8 +11,15 @@ from unittest import mock
 
 from fs_exec.client import Client
 from fs_exec.config import Target
-from fs_exec.protocol import ProtocolError, TargetPaths, publish_final, publish_request, read_final, verify_request
-from fs_exec.util import exact_wait, now_ns
+from fs_exec.protocol import (
+    ProtocolError,
+    TargetPaths,
+    publish_final,
+    publish_request,
+    read_final,
+    verify_request,
+)
+from fs_exec.util import exact_wait, now_ns, read_json, sha256_bytes
 
 
 class ProtocolTests(unittest.TestCase):
@@ -20,6 +27,7 @@ class ProtocolTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.paths = TargetPaths(self.root)
+        self.paths.initialize()
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -47,13 +55,13 @@ class ProtocolTests(unittest.TestCase):
         verify_request(self.paths.ready("j-test"))
         (self.paths.ready("j-test") / "uploads" / "data.txt").write_text("tampered")
         with self.assertRaises(ProtocolError):
-            verify_request(self.paths.ready("j-test"))
+            verify_request(self.paths.ready("j-test"), 0)
 
     def test_final_result_checksum_is_verified(self) -> None:
         result_dir = self.paths.result("j-test")
         publish_final(result_dir, {"job_id": "j-test", "status": "COMPLETED"})
         self.assertEqual(read_final(result_dir)["status"], "COMPLETED")
-        (result_dir / "result.json").write_text("{}")
+        (result_dir / read_json(result_dir / "FINAL")["result_file"]).write_text("{}")
         with self.assertRaises(ProtocolError):
             read_final(result_dir)
 
@@ -79,7 +87,7 @@ class ProtocolTests(unittest.TestCase):
     def test_wait_polls_numbered_chunk_even_when_final_arrives_first(self) -> None:
         client = Client(Target("test", self.root), state_dir=self.root / "state")
         result_dir = self.paths.result("j-delayed")
-        publish_final(result_dir, {"job_id": "j-delayed", "status": "COMPLETED", "exit_code": 0, "stdout_chunks": 1, "stderr_chunks": 0})
+        publish_final(result_dir, {"job_id": "j-delayed", "status": "COMPLETED", "exit_code": 0, "stdout_chunks": 1, "stderr_chunks": 0, "streams": {"stdout": [{"size": 7, "sha256": sha256_bytes(b"delayed")}], "stderr": []}})
 
         def delayed_chunk() -> None:
             time.sleep(0.08)

@@ -1,6 +1,8 @@
 [policy]
-allowed_executables = ["python3", "python.exe", "curl", "git", "psql", "bash", "pwsh", "powershell.exe"]
-allowed_runtimes = ["bash", "powershell"]
+# Replace with existing owner-controlled absolute paths on this target.
+# Windows example: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+allowed_executables = ["/usr/bin/python3", "/usr/bin/curl", "/usr/bin/git", "/usr/bin/psql", "/usr/bin/bash"]
+allowed_runtimes = ["bash"]
 cwd_roots = ["/home/developer/work"]
 environment_allowlist = ["CI", "DEBUG", "PGSERVICE"]
 max_runtime_seconds = 1800
@@ -8,3 +10,6 @@ max_request_bytes = 1048576
 max_output_bytes = 16777216
 max_upload_bytes = 134217728
 max_artifact_bytes = 134217728
+max_upload_files = 128
+max_artifact_files = 128
+max_queue_age_seconds = 3600

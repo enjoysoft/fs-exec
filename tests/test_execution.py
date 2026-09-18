@@ -23,8 +23,9 @@ class ExecutionTests(unittest.TestCase):
         self.root = self.base / "relay"
         self.cwd = self.base / "work"
         self.cwd.mkdir()
+        TargetPaths(self.root).initialize()
         self.client = Client(Target("local", self.root), state_dir=self.base / "state")
-        self.policy = Policy(allowed_executables=frozenset({Path(sys.executable).name}), cwd_roots=(self.cwd,), environment_allowlist=frozenset({"DEMO"}), max_runtime_seconds=10)
+        self.policy = Policy(allowed_executables=frozenset({sys.executable}), cwd_roots=(self.cwd,), environment_allowlist=frozenset({"DEMO"}), max_runtime_seconds=10)
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -111,25 +112,27 @@ class ExecutionTests(unittest.TestCase):
         result = read_final(paths.result("j-interrupted"))
         self.assertEqual(result["status"], "AVAILABILITY_UNKNOWN")
 
-    def test_restart_releases_claim_that_never_started(self) -> None:
+    def test_restart_preserves_claim_even_when_started_is_not_visible(self) -> None:
         paths = TargetPaths(self.root)
         paths.initialize()
         claim = paths.claims / "j-not-started"
         claim.mkdir()
         write_exclusive(claim / "CLAIM", b"{}")
         Watcher(self.root, self.policy).recover_interrupted()
-        self.assertFalse(claim.exists())
+        self.assertTrue(claim.exists())
+        self.assertEqual(read_final(paths.result("j-not-started"))["status"], "AVAILABILITY_UNKNOWN")
 
-    def test_restart_reclaims_same_host_dead_watcher_lock(self) -> None:
+    def test_restart_does_not_steal_even_dead_watcher_lock(self) -> None:
         paths = TargetPaths(self.root)
         paths.initialize()
         lock = paths.health / "watcher.lock"
         lock.mkdir()
         write_exclusive(lock / "owner.json", f'{{"host":"{socket.gethostname()}","pid":2147483647,"watcher_id":"dead"}}'.encode())
         watcher = Watcher(self.root, self.policy, watcher_id="replacement")
-        watcher.acquire_singleton()
+        with self.assertRaises(RuntimeError):
+            watcher.acquire_singleton()
         watcher.release_singleton()
-        self.assertFalse(lock.exists())
+        self.assertTrue(lock.exists())
 
     def test_artifact_roundtrip_and_checksum(self) -> None:
         output = self.cwd / "report.txt"
@@ -141,10 +144,12 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(copied[0].read_text(), "report")
 
     def test_cross_platform_shell_abstraction_and_default_argv(self) -> None:
-        policy = Policy(allowed_executables=frozenset({"echo"}))
-        self.assertEqual(command_for({"mode": "argv", "argv": ["echo", "$HOME"]}, "linux", policy), ["echo", "$HOME"])
-        self.assertEqual(command_for({"mode": "shell", "runtime": "bash", "script": "echo ok"}, "linux", policy)[:2], ["bash", "-euo"])
-        self.assertEqual(command_for({"mode": "shell", "runtime": "powershell", "script": "Write-Output ok"}, "windows", policy)[0], "powershell.exe")
+        from unittest.mock import patch
+        policy = Policy(allowed_runtimes=frozenset({"bash", "powershell"}))
+        with patch("fs_exec.policy.executable_for", side_effect=lambda value, policy: "/trusted/" + value):
+            self.assertEqual(command_for({"argv": ["echo", "$HOME"]}, "linux", policy), ["/trusted/echo", "$HOME"])
+            self.assertEqual(command_for({"mode": "shell", "runtime": "bash", "script": "echo ok"}, "linux", policy), ["/trusted/bash", "--noprofile", "--norc", "-euo", "pipefail", "-c", "echo ok"])
+            self.assertEqual(command_for({"mode": "shell", "runtime": "powershell", "script": "Write-Output ok"}, "windows", policy), ["/trusted/powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Write-Output ok"])
 
     def test_credentials_are_not_inherited_or_accepted(self) -> None:
         import os

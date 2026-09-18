@@ -10,6 +10,7 @@ from pathlib import Path
 from fs_exec.client import Client
 from fs_exec.config import Policy, Target
 from fs_exec.latency import LatencyStore, percentile
+from fs_exec.protocol import TargetPaths
 from fs_exec.watcher import Watcher
 
 
@@ -37,7 +38,8 @@ class LatencyAndE2ETests(unittest.TestCase):
             base = Path(directory)
             root, cwd = base / "relay", base / "work"
             cwd.mkdir()
-            policy = Policy(allowed_executables=frozenset({Path(sys.executable).name}), cwd_roots=(cwd,))
+            TargetPaths(root).initialize()
+            policy = Policy(allowed_executables=frozenset({sys.executable}), cwd_roots=(cwd,))
             watcher = Watcher(root, policy, poll_interval=0.01)
             thread = threading.Thread(target=watcher.run)
             thread.start()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -21,7 +22,8 @@ class Target:
 @dataclass(frozen=True)
 class Policy:
     allowed_executables: frozenset[str] = frozenset()
-    allowed_runtimes: frozenset[str] = frozenset({"bash", "powershell"})
+    allowed_runtimes: frozenset[str] = frozenset()
+    executable_sha256: dict[str, str] = field(default_factory=dict)
     cwd_roots: tuple[Path, ...] = ()
     environment_allowlist: frozenset[str] = frozenset()
     max_runtime_seconds: float = 3600
@@ -29,10 +31,21 @@ class Policy:
     max_output_bytes: int = 16 * 1024 * 1024
     max_artifact_bytes: int = 128 * 1024 * 1024
     max_upload_bytes: int = 128 * 1024 * 1024
+    max_upload_files: int = 128
+    max_artifact_files: int = 128
+    max_queue_age_seconds: float = 3600
     read_only: bool = False
     approval_hook: Path | None = None
     deny_executables: frozenset[str] = frozenset({"sudo", "su", "doas", "fs-exec", "fs-exec-watcher"})
     deny_environment_fragments: tuple[str, ...] = ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PRIVATE_KEY")
+
+    def __post_init__(self) -> None:
+        for name in ("max_runtime_seconds", "max_queue_age_seconds"):
+            if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        for name in ("max_request_bytes", "max_output_bytes", "max_artifact_bytes", "max_upload_bytes", "max_upload_files", "max_artifact_files"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ValueError(f"{name} must be a nonnegative integer")
 
 
 @dataclass(frozen=True)
@@ -80,7 +93,8 @@ def load_policy(path: Path) -> Policy:
         raw: dict[str, Any] = tomllib.load(handle).get("policy", {})
     return Policy(
         allowed_executables=frozenset(map(str, raw.get("allowed_executables", []))),
-        allowed_runtimes=frozenset(map(str, raw.get("allowed_runtimes", ["bash", "powershell"]))),
+        allowed_runtimes=frozenset(map(str, raw.get("allowed_runtimes", []))),
+        executable_sha256=dict(raw.get("executable_sha256", {})),
         cwd_roots=tuple(Path(str(p)).expanduser().resolve() for p in raw.get("cwd_roots", [])),
         environment_allowlist=frozenset(map(str, raw.get("environment_allowlist", []))),
         max_runtime_seconds=float(raw.get("max_runtime_seconds", 3600)),
@@ -88,6 +102,9 @@ def load_policy(path: Path) -> Policy:
         max_output_bytes=int(raw.get("max_output_bytes", 16 * 1024 * 1024)),
         max_artifact_bytes=int(raw.get("max_artifact_bytes", 128 * 1024 * 1024)),
         max_upload_bytes=int(raw.get("max_upload_bytes", 128 * 1024 * 1024)),
+        max_upload_files=int(raw.get("max_upload_files", 128)),
+        max_artifact_files=int(raw.get("max_artifact_files", 128)),
+        max_queue_age_seconds=float(raw.get("max_queue_age_seconds", 3600)),
         read_only=bool(raw.get("read_only", False)),
         approval_hook=Path(str(raw["approval_hook"])).expanduser().resolve() if raw.get("approval_hook") else None,
         deny_executables=frozenset(map(str, raw.get("deny_executables", ["sudo", "su", "doas", "fs-exec", "fs-exec-watcher"]))),

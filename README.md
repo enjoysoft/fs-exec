@@ -16,7 +16,7 @@ fs-exec --target windows --script 'Get-ComputerInfo | ConvertTo-Json' --runtime 
 
 ## Quick start
 
-1. Mount one shared directory on client and target. Restrict it with OS/filesystem ACLs.
+1. Provision and mount one shared directory on client and target. Apply the [directional ACL recipe](docs/operations.md#directional-namespace-ownership-is-required): clients must not write results, claims, heartbeat or lock state. The owner creates the namespace first; clients no longer create it.
 2. Copy and edit [`examples/config.toml`](examples/config.toml) on the client and [`examples/policy-dev.toml`](examples/policy-dev.toml) on the target.
 3. Start the target watcher:
 
@@ -71,7 +71,7 @@ See [architecture and protocol](docs/architecture.md), [security and threat mode
 
 ## Status and limitations
 
-This MVP is deliberately an at-most-once, single-watcher-per-target relay. It is not a distributed scheduler. A crash after `STARTED` is reported `AVAILABILITY_UNKNOWN` and is never replayed automatically. Shell mode cannot safely infer whether a script is read-only. Filesystem ACLs are the authentication boundary; hashes detect corruption, not a malicious writer with share access. See the full limitations in the docs.
+This is a single-watcher-per-target relay, not a distributed scheduler. Every pre-existing crash-recovery claim is reported `AVAILABILITY_UNKNOWN` and is never replayed automatically, even when STARTED is not visible. Duplicate suppression depends on retained claims and tested server atomicity/durability; it does not promise exactly-once effects or safe live failover. Protocol v2 requires atomic hard-links and coordinated client/watcher upgrades. Executable/runtime/cwd/environment allowlists default to deny-all; configure absolute owner-controlled executable paths. Live output is provisional until FINAL verification. Shell mode cannot infer read-only behavior, and filesystem ACLs—not hashes—authenticate the writer. Linux/local tests do not establish native Windows or NFS/SMB correctness. See the deployment gates and limitations in the docs.
 
 ## Development
 
