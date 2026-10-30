@@ -1,0 +1,31 @@
+# Use fresh roots and a unique channel name for each retained namespace.
+# The broker sees all mailboxes. Agents see only their own mailbox and state.
+[channel]
+channel = "team-one"
+state_dir = "/var/lib/fs-channel/broker"
+max_events = 10000
+max_message_bytes = 16384
+max_pending = 32
+max_lease_seconds = 300
+page_size = 100
+
+[[participants]]
+name = "amp"
+role = "coordinator"
+root = "/srv/fs-channel/amp"
+
+[[participants]]
+name = "claude-one"
+root = "/srv/fs-channel/claude-one"
+
+[[participants]]
+name = "claude-two"
+root = "/srv/fs-channel/claude-two"
+
+[[participants]]
+name = "grok-one"
+root = "/srv/fs-channel/grok-one"
+
+[[participants]]
+name = "grok-two"
+root = "/srv/fs-channel/grok-two"

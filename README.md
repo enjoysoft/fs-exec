@@ -47,6 +47,22 @@ fresh-namespace migration, limits, service samples and native-platform test gate
 Use `fs-rally --config rally.toml dry-run` before `run`. Relayed output waits for
 FINAL integrity verification; status and cancellation still work while jobs run.
 
+## Group chat and agent coordination
+
+The included `fs-channel` provides a durable filesystem group channel for one
+Amp coordinator and multiple external agents, including Claude Code and Grok
+tool integrations. A non-executing broker sequences append-only messages across
+directional per-agent mailboxes, with idempotent sends, mentions/replies, explicit
+acknowledgements, informational presence leases and revision-checked task status.
+Private journals recover interrupted publication; retained identities and bounded
+namespace budgets prevent silent replay or unsafe automatic history eviction.
+
+Start with [the five-participant configuration](examples/channel.toml) and
+[the channel guide](docs/channel.md) for CLI/JSON/Python adapters, mandatory ACLs,
+crash recovery and retirement. This is a separate namespace, not an unrestricted
+fs-rally mirror. Agents retain their own execution policies; the channel does
+not launch bots, execute message text or promise exactly-once task effects.
+
 ## CLI
 
 ```text

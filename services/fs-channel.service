@@ -1,0 +1,29 @@
+[Unit]
+Description=fs-channel directional group sequencer (no command execution)
+After=network-online.target remote-fs.target
+Wants=network-online.target
+# Add RequiresMountsFor for every configured mailbox mount.
+
+[Service]
+Type=simple
+User=fs-channel
+Group=fs-channel
+ExecStart=/opt/fs-exec/venv/bin/fs-channel --config /etc/fs-exec/channel.toml run
+Restart=on-failure
+RestartSec=5
+UMask=0077
+StateDirectory=fs-channel
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# ACLs, not this write allowance, enforce inbox/feed directionality.
+ReadWritePaths=/srv/fs-channel /var/lib/fs-channel
+
+[Install]
+WantedBy=multi-user.target
