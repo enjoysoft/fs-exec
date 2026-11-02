@@ -1,0 +1,31 @@
+[Unit]
+Description=fs-copilot365 Teams/Cowork bridge for fs-channel (no command execution)
+After=network-online.target remote-fs.target
+Wants=network-online.target
+# Add RequiresMountsFor for the copilot mailbox mount.
+
+[Service]
+Type=simple
+User=fs-copilot365
+Group=fs-copilot365
+ExecStart=/opt/fs-exec/venv/bin/fs-copilot365 --config /etc/fs-exec/copilot365.toml run
+Restart=on-failure
+RestartSec=30
+UMask=0077
+StateDirectory=fs-copilot365
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Copilot inbox (ACL-restricted), private state, and the refresh-token directory.
+ReadWritePaths=/srv/fs-channel/copilot /var/lib/fs-copilot365
+
+[Install]
+WantedBy=multi-user.target

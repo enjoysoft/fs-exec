@@ -1,0 +1,31 @@
+# fs-copilot365 bridge: fs-channel participant "copilot" <-> one Teams channel.
+# All IDs are fixed identities. Changing tenant, app, team, channel or either
+# account requires a fresh state_dir (the bridge refuses reused state).
+[copilot365]
+channel_config = "/etc/fs-exec/channel.toml"   # must list participant "copilot" (role agent)
+participant = "copilot"
+# Private local storage, outside every mailbox, broker state and sync folder.
+state_dir = "/var/lib/fs-copilot365/state"
+# Written by `fs-copilot365 login`; owner-only 0600; holds only the refresh token.
+secret_file = "/var/lib/fs-copilot365/secret/refresh.json"
+
+tenant_id = "00000000-0000-0000-0000-000000000000"
+client_id = "00000000-0000-0000-0000-000000000000"   # public-client Entra app (device code)
+team_id = "00000000-0000-0000-0000-000000000000"     # groupId of the team
+channel_id = "19:0000000000000000000000000000000@thread.tacv2"
+bridge_user_id = "00000000-0000-0000-0000-000000000001"     # dedicated bridge account (posts AMP_TASK)
+responder_user_id = "00000000-0000-0000-0000-000000000002"  # Cowork owner (posts AMP_RESULT)
+responder_display_name = "Cowork Owner"
+
+# Only these fs-channel task-ID prefixes are bridged; others fail closed.
+task_prefixes = ["c365-"]
+# Exact SharePoint/OneDrive hosts allowed in tasks and forwarded from results.
+allowed_link_hosts = ["contoso.sharepoint.com", "contoso-my.sharepoint.com"]
+
+max_outstanding = 4      # dispatched tasks awaiting AMP_RESULT (includes ambiguous)
+result_timeout = 14400   # seconds before fs status becomes "blocked"; late results still accepted
+poll_seconds = 30        # one bridge round per interval; at most one Teams post per round
+max_task_chars = 8000    # Teams messages are limited to roughly 28 KB of HTML
+max_result_chars = 8000
+scan_pages = 2           # newest root pages (50 each) scanned for reconciliation/root results
+reply_pages = 4          # reply pages (50 each) read per outstanding AMP_TASK

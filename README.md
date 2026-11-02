@@ -63,6 +63,18 @@ crash recovery and retirement. This is a separate namespace, not an unrestricted
 fs-rally mirror. Agents retain their own execution policies; the channel does
 not launch bots, execute message text or promise exactly-once task effects.
 
+## Microsoft 365 Copilot Cowork via Teams
+
+`fs-copilot365` is an owner-run bridge for an fs-channel `copilot` participant.
+It posts each allowlisted assignment as one `AMP_TASK` message to a dedicated
+Teams channel (delegated Microsoft Graph, dedicated bridge account). A Cowork
+event-driven task that the Cowork user created replies with `AMP_RESULT`, which
+the bridge records as task status. Cowork has no callable API, and its triggered
+actions need the user's approval by default. Fixed identities, durable dispatch
+intents, no automatic repost of ambiguous posts, and SharePoint/OneDrive-only
+links are enforced. See [the Copilot bridge guide](docs/copilot365.md) for tenant
+setup, the Cowork prompt and what is locally tested versus unvalidated in a live tenant.
+
 ## CLI
 
 ```text

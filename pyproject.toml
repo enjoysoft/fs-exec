@@ -17,6 +17,7 @@ fs-exec = "fs_exec.cli:main"
 fs-exec-watcher = "fs_exec.cli:watcher_main"
 fs-rally = "fs_exec.rally:main"
 fs-channel = "fs_exec.channel:main"
+fs-copilot365 = "fs_exec.copilot365:main"
 
 [tool.setuptools.packages.find]
 include = ["fs_exec*"]
